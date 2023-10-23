@@ -1,0 +1,173 @@
+---
+title: 'Empirical Paper: Code Breakdown'
+author: "Matt Gola"
+date: "12/14/2019"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+Creating the Dataset
+
+```{r Dataset Creation, include=TRUE}
+library(tidyverse)
+states <- read_csv("/Users/mattgola/RStudio/Econometrics Paper/EmpPaper2.csv")
+```
+
+| Variable | Description |
+|----------|-------------|
+| 'Yunemp' | Youth Unemployment Rate: Percent of individuals aged 16-24 who are currently unemployed in each State |
+| 'MinWage' | Minimum Wage: Minimum hourly wage rate in each state |
+| 'TSPP' | Total Spending Per Pupil: How much each state spends on public elementary-secondary education per student |
+| 'PovRate' | Poverty Rate: Percent of each state's population who live below the poverty threshold. This threshold varies by family size, number of children, and age of householder |
+
+I created a histogram of state Wage Minima so that the distribution of wages can be better understood. I did not include the legend because it took up too much space on the plot.
+
+```{r Minimum Wage Histogram, include=TRUE}
+library(ggplot2)
+ggplot(states)+
+  aes(x = MinWage, color = States)+
+  geom_histogram(breaks = seq(7,12,.25))+
+  scale_x_continuous(breaks = seq(7,12,.50))+
+  theme(legend.position = "none")
+```
+  
+
+I then tried to plot the two variables in my omitted variable model to see what patterns I could find. I removed the legend so that the graph could be seen more easily.
+
+```{r Omitted Model Plot, include=TRUE}
+library(ggplot2)
+ggplot(data=states)+
+  aes(x = MinWage, y = Yunemp)+
+  geom_point(aes(color = States))+
+  geom_smooth(method = "lm")+
+  theme(legend.position = "none")+
+  labs(x = "Minimum Wage", y = "Youth Unemployment")
+```
+
+The regression line seemed to hint at a slightly positive correlation between Minimum Wage against Youth Unemployment. I then ran my omitted variable regression.
+
+I plotted the relationship between total spending per pupil and youth unemployment and was surprised to find no relationship at all. I would expect a variable like public education funding per capita to have some positive effect on youth unemployment as it should equate to a better educated youth work force.
+
+```{r TSPP Agasint Yunemp, include=TRUE}
+ggplot(states)+
+  aes(x = TSPP, y = Yunemp)+
+  geom_point(aes(color = "States"))+
+  geom_smooth(method = "lm")
+```
+
+$$\text{Yunemp}_i = \beta_0+\beta_1 \text{MinWage}_i + u_i$$
+
+```{r Omitted Regression, include=TRUE}
+library(huxtable)
+omitted_statesreg <- lm(Yunemp ~ MinWage, data = states)
+huxreg(omitted_statesreg)
+```
+
+
+
+I found a slightly positive correlation between state wage minima and youth unemployment; meaning that as the state minimum wage rises, the youth unemployment rate also rises. This coefficient, however, was not statistically significant at any level.
+
+I then ran my multivariate regression.
+
+$$\text{Yunemp}_i = \beta_0+\beta_1 \text{MinWage}_i+\beta_2 \text{TSPP}_i+\beta_3 \text{PovRate}_i$$
+
+```{r Multivariate Regression, include=TRUE}
+multivariate_statesreg <- lm(Yunemp ~ MinWage+TSPP+PovRate, data = states)
+huxreg(multivariate_statesreg)
+```
+
+I also ran a regression to check the robustness of my multivariate regression. I use the 'MASS' package to run a 'robust linear model'. Instead of find the ordinary least squares regression, I am finding the iterated re-weighted least squares regression. This minimizes least absolute errors instead of least squared errors to minimize the effect of outliers on the regeression's coefficients.
+
+```{r Robust Multivariate Regression, include=TRUE}
+library(MASS)
+robust_statesreg <- rlm(Yunemp ~ MinWage+TSPP+PovRate, data = states)
+huxreg(robust_statesreg)
+```
+
+I calculated the VIF of my variables to determined the effect on R^2. The VIF for each variable was not alarming.
+
+I also created a correlation table between Youth Unemployment, Minimum Wage, Total Spending Per Pupil, and Poverty Rate. I found that Poverty Rate and Youth Unemployment were highly correlated. I also found that there was a fairly strong correlation between a state's minimum wage and their Total Spending Per Pupil.
+
+```{r VIF Calculation and Correlation Table, include=TRUE}
+library(car)
+vif(multivariate_statesreg)
+
+multivariate_statesreg.corr <- subset(states, select = c("Yunemp", "MinWage", "TSPP", "PovRate"))
+cor(multivariate_statesreg.corr)
+```
+
+I also decided to run a log-log regression model using my omitted regression and then my multivariate regression to find the elasticity of youth unemployment with respect to state minimum wage and with respect to my additional variables. I made the dataframe 'states3' because I forgot to include the log of my other variables in the dataframe 'states2'. I also ran a robust regression on the log-log multivariate model to see if this changes my coefficient drastically.
+
+```{r Log-log Models, include=TRUE}
+states2 <- states %>%
+  mutate(logYunemp = log(Yunemp))%>%
+  mutate(logMinWage = log(MinWage))
+
+states3 <- states2 %>%
+  mutate(logTSPP = log(TSPP))%>%
+  mutate(logPovRate = log(PovRate))
+
+loglog_omittedreg <- lm(logYunemp ~ logMinWage, data=states3)
+loglog_multivariatereg <- lm(logYunemp ~ logMinWage+logTSPP+logPovRate, data=states3)
+loglog_robustreg <- rlm(logYunemp ~ logMinWage+logTSPP+logPovRate, data=states3)
+```
+
+In the multivariate regression, I found a slightly higher correlation between state wage minima and Youth Unemployment. However, this coefficient was still not statistically significant. I did, however, find a strong correlation between Poverty Rate and Youth Unemployement. This coefficicent was statistically significant to three decimal points.
+
+Because I found a correlation between a state's minimum wage and their TSPP, I decided to plot them against each other. I also created a histogram of TSPP among the states.
+
+```{r MinWage Against TSPP Plot, include=TRUE}
+ggplot(states)+
+  aes(x = MinWage, y = TSPP)+
+  geom_point(aes(color = "Statess"))+
+  geom_smooth(method = "lm")+
+  theme(legend.position = "none")+
+  labs(x = "Minimum Wage", y = "Total Spending Per Pupil")
+```
+
+```{r TSPP by State, include=TRUE}
+ggplot(states)+
+  aes(x = TSPP, color = States)+
+  geom_histogram()+
+  theme(legend.position = "none")+
+  labs(x = "Total Spending Per Pupil", y = "Number of States")+
+  scale_x_continuous(breaks = seq(0,30000,1000))
+```
+
+I created a plot for Poverty Rate against Youth Unemployment because their correlation was even higher. I also created a histogram of the Poverty Rate distribution across the states.
+
+```{r PovRate Against Yunemp, include=TRUE}
+ggplot(states)+
+  aes(x = PovRate, y = Yunemp)+
+  geom_point(aes(color = "States"))+
+  geom_smooth(method = "lm")+
+  theme(legend.position = "none")+
+  labs(x = "Poverty Rate", y = "Youth Unemployment")
+```
+
+```{r Histogram of PovRate Across States, include=TRUE}
+ggplot(states)+
+  aes(PovRate, color = States)+
+  geom_histogram()+
+  theme(legend.position = "none")+
+  labs(x = "Poverty Rate", y = "Number of States")+
+  scale_x_continuous(breaks = seq(5,25,2))
+```
+
+I created a regression table which included my omitted regression, multivariate regression, robust multivariate regression, and log-log models so that it is easier to compare and contrast them.
+
+```{r Huxtable Regressions, include=TRUE}
+huxreg("Omitted" = omitted_statesreg, "Multivariate" = multivariate_statesreg, "Robust" = robust_statesreg, coefs = c("Intercept" = "(Intercept)", "Minimum Wage" = "MinWage", "Total Spending Per Pupil" = "TSPP", "Poverty Rate" = "PovRate"), number_format = 3)
+```
+
+```{r Hutable Log-Log Regressions, include=TRUE}
+huxreg("Log Omitted" = loglog_omittedreg, "Log Multivariate" = loglog_multivariatereg, "Log Robust" = loglog_robustreg, coefs = c("Intercept" = "(Intercept)", "Log Minimum Wage" = "logMinWage", "Log Total Spending Per Pupil" = "logTSPP", "log Poverty Rate" = "logPovRate"), number_format = 3)
+```
+
+I created a table of my summary statistics to add into the data section of the paper.
+
+```{r summary-statistics-table, include=TRUE}
+summary.data.frame(states)%>%
+  knitr::kable(., caption = "Summary Statistics")
+```
